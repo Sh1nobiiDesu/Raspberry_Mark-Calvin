@@ -1,0 +1,90 @@
+import fluidsynth
+import pygame.midi
+import time
+import serial
+from flask import Flask,request,jsonify
+from flask_cors import CORS
+#import ssl
+
+#context = ssl.create_default_context()
+#context.set_ciphers('TLSv1.2')
+
+#FluidSynth Setup
+fs = fluidsynth.Synth()
+
+#UART setup
+ser = serial.Serial(
+      port='/dev/ttyS0',
+      baudrate=115200,
+      parity=serial.PARITY_NONE,
+      stopbits=serial.STOPBITS_ONE,
+      bytesize=serial.EIGHTBITS,
+      timeout=2
+      )
+
+#Initial setup for the instrument
+channel = 0
+note = 60
+velocity = 127
+duration = 1
+notes = [36,48,60,72,84,96,108,120]
+instrument_loaded = True
+
+#Web Service setup and recieve code
+app = Flask(__name__)
+CORS(app)
+@app.route('/recieve_data',methods=['GET'])
+
+#path = "/home/sh1nobii/TheTheremin/Instruments/Noire_-_Native_Instruments.sf2"
+#sfid = fs.sfload(path)
+#fs.program_select(0,sfid,0,0)
+#fs.start(driver='alsa')
+
+def recieve_data():
+    data = request.get_json() #Get the raw json data from our website
+    print(f"Recieved data: {data}")
+    sfid = fs.sfload(data['instrument']) #Load the data (Should be given a file path)
+    fs.program_select(0,sfid,0,0)
+    fs.start(driver = 'alsa') #Start the fluidsynth program
+    instrument_loaded = True
+    #play_note()
+    return jsonify({"status":"success","message":"Data recieve successfully"})
+
+def play_note():
+    note_played = False
+    prev_meas = 0
+    while(True):
+		#app.run(host='0.0.0.0',port=5000)
+
+		#print("hi")
+		#app.run('0.0.0.0',port=5000)
+        data = ser.readline() #Read from the TX pin
+        print(f"UART Recieved: {data.decode('utf-8')}")
+        raw_data = data.decode('utf-8')
+		#Check if data was recieved
+        if raw_data == '':
+            continue
+        ir_data = raw_data.split(" ") #Get the distance (take out the cm)
+        ir_number = float(ir_data[0])
+        if int(ir_number) < 4 or int(ir_number) > 28:
+            continue
+        ir_meas = int(ir_number)//4
+        print(prev_meas)
+		#Check if the same note is still being played
+        note = notes[ir_meas]
+        if prev_meas == ir_meas:
+            continue
+        prev_meas = ir_meas
+    #Check if an instrument was loaded
+        if(not instrument_loaded):
+             return
+        fs.noteon(channel,note,velocity) #Play the note
+        print('played')
+#    time.sleep(5)
+
+
+if __name__ == '__main__':
+
+	app.run(host='0.0.0.0',port=5000) #Start the web server so it can communicate with our we server
+	
+		#play_note()
